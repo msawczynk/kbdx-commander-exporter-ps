@@ -37,7 +37,8 @@ param(
     [string]$ConfigPath,                   # Commander config.json (default: ~/.keeper/config.json)
     [string]$KeeperExe = "keeper",
     [switch]$InstallPrereqs,               # pip install keepercommander + pykeepass
-    [switch]$Force                         # overwrite existing file
+    [switch]$Force,                        # overwrite existing file
+    [switch]$NoPrompt                      # unattended: pass --force to Commander and capture its output to the log
 )
 
 $ErrorActionPreference = 'Stop'
@@ -84,7 +85,8 @@ if ($KeyFile)           { $cmdArgs.AddRange([string[]]@('--keepass-key-file', $K
 if ($Folder)            { $cmdArgs.AddRange([string[]]@('--folder', $Folder)) }
 if ($OwnedOnly)         { $cmdArgs.Add('--owned-only') }
 if ($MaxAttachmentSize) { $cmdArgs.AddRange([string[]]@('--max-size', $MaxAttachmentSize.ToUpper())) }
-if ($StoreInVault)      { $cmdArgs.Add('--store-in-vault') }
+if ($StoreInVault)      { $cmdArgs.Add('--save-in-vault') }   # docs say --store-in-vault; Commander source uses --save-in-vault
+if ($NoPrompt)          { $cmdArgs.Add('--force') }          # suppress Commander confirmations
 $cmdArgs.Add($OutFile)
 
 $shown = ($cmdArgs | ForEach-Object { $_ -replace '^(--keepass-file-password=).*', '$1********' }) -join ' '
@@ -95,8 +97,16 @@ if (-not $KdbxPassword) { Write-Host "Commander will prompt for the KDBX file pa
 $exit = $null
 try {
     $argArray = $cmdArgs.ToArray()
-    & $KeeperExe @argArray
-    $exit = $LASTEXITCODE
+    if ($NoPrompt) {
+        # capture Commander output (incl. stderr) so it lands in the transcript/log
+        $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+        & $KeeperExe @argArray 2>&1 | ForEach-Object { Write-Host "    $_" }
+        $exit = $LASTEXITCODE
+        $ErrorActionPreference = $eap
+    } else {
+        & $KeeperExe @argArray
+        $exit = $LASTEXITCODE
+    }
 }
 finally {
     $cmdArgs.Clear(); $argArray = $null
